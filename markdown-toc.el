@@ -447,14 +447,6 @@ opens new issue in markdown-toc's github tracker."
     (browse-url "https://github.com/KarimAziev/markdown-toc/issues/new"))
   (markdown-toc-log-msg (list (markdown-toc--bug-report))))
 
-(defvar markdown-toc-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c m .") #'markdown-toc-follow-link-at-point)
-    (define-key map (kbd "C-c m t") #'markdown-toc-generate-or-refresh-toc)
-    (define-key map (kbd "C-c m d") #'markdown-toc-delete-toc)
-    map)
-  "Default Bindings map for markdown-toc mode.")
-
 
 ;;;###autoload
 (define-minor-mode markdown-toc-mode
@@ -466,9 +458,9 @@ navigation to TOC links."
   :init-value nil
   :lighter " mt"
   :group 'markdown-toc
-  :keymap markdown-toc-mode-map
   (remove-hook 'before-save-hook #'markdown-toc--refresh-toc-maybe 'local)
-  (remove-hook 'markdown-follow-link-functions #'markdown-toc--follow-link 'local)
+  (remove-hook 'markdown-follow-link-functions #'markdown-toc--follow-link
+               'local)
   (when markdown-toc-mode
     (add-hook 'before-save-hook #'markdown-toc--refresh-toc-maybe nil 'local)
     (add-hook 'markdown-follow-link-functions 'markdown-toc--follow-link nil
