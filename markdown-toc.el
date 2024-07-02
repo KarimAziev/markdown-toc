@@ -6,7 +6,7 @@
 ;; Maintainer: Antoine R. Dumont (@ardumont)
 ;; URL: https://github.com/KarimAziev/markdown-toc
 ;; Created: 24th May 2014
-;; Version: 0.1.5
+;; Version: 0.2.0
 ;; Keywords: markdown, toc, tools,
 ;; Package-Requires: ((markdown-mode "2.6") (emacs "26.1"))
 
