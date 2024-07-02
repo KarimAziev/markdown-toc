@@ -408,7 +408,9 @@ Argument LINK is a string representing the link to follow."
                     (goto-char (point-min))
                     (re-search-forward (regexp-quote link) nil t 1)
                     (markdown-toc-follow-link-at-point))))
-    (goto-char pos)
+    (push-mark)
+    (when (goto-char pos)
+      (recenter))
     pos))
 
 (defun markdown-toc--bug-report ()
