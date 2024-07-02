@@ -1,13 +1,14 @@
-;;; markdown-toc.el --- A simple TOC generator for markdown file
+;;; markdown-toc.el --- A simple TOC generator for markdown file -*- lexical-binding: t; -*-
 ;; Copyright (C) 2014-2020 Antoine R. Dumont (@ardumont)
 
 ;; Author: Antoine R. Dumont (@ardumont)
+;;         Karim Aziiev <karim.aziiev@gmail.com>
 ;; Maintainer: Antoine R. Dumont (@ardumont)
-;; URL: http://github.com/ardumont/markdown-toc
+;; URL: https://github.com/KarimAziev/markdown-toc
 ;; Created: 24th May 2014
 ;; Version: 0.1.5
 ;; Keywords: markdown, toc, tools,
-;; Package-Requires: ((markdown-mode "2.1") (dash "2.11.0") (s "1.9.0"))
+;; Package-Requires: ((markdown-mode "2.6") (emacs "26.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -33,7 +34,7 @@
 ;; Update existing TOC: C-u M-x markdown-toc-generate-toc
 
 ;; Here is a possible output:
-;; <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->
+;; <!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->x
 ;; **Table of Contents**
 
 ;; - [some markdown page title](#some-markdown-page-title)
@@ -58,8 +59,9 @@
 
 ;;; Code:
 
-(require 's)
-(require 'dash)
+(eval-when-compile
+  (require 'subr-x))
+
 (require 'markdown-mode)
 
 (defconst markdown-toc--toc-version "0.1.5" "Current version installed.")
@@ -95,17 +97,33 @@ Example: '-' for unordered lists or '1.' for ordered lists."
   :group 'markdown-toc
   :type 'string)
 
-(defcustom markdown-toc-indentation-space 4
+(defcustom markdown-toc-indentation-space 2
   "Let the user decide the indentation level."
   :group 'markdown-toc
   :type 'integer)
 
-(defcustom markdown-toc-user-toc-structure-manipulation-fn
-  (lambda (toc-structure) toc-structure)
+(defcustom markdown-toc-quote t
+  "Whether to quote each line of the generated table of contents.
+
+When set to t, the generated Table of Contents (TOC) entries will be
+formatted as blockquotes in Markdown.
+
+When set to nil, the TOC entries will be formatted as regular list
+items without blockquotes.
+
+This variable controls the visual style of the TOC in the generated
+Markdown document."
+  :group 'markdown-toc
+  :type 'boolean)
+
+(defcustom markdown-toc-user-toc-structure-manipulation-fn (lambda
+                                                             (toc-structure)
+                                                             toc-structure)
   "User crafted function to manipulate toc-structure as user sees fit.
 
 The toc-structure has the following form:
-'((0 . \"some markdown page title\")
+
+\\='((0 . \"some markdown page title\")
   (0 . \"main title\")
   (1 . \"Sources\")
   (2 . \"Marmalade (recommended)\")
@@ -124,7 +142,7 @@ The toc-structure has the following form:
 If the user wanted to remove the first element, it could for
 example define the following function:
   (custom-set-variables
-    '(markdown-toc-user-toc-structure-manipulation-fn 'cdr))
+    \\='(markdown-toc-user-toc-structure-manipulation-fn \\='cdr))
 
 Default to identity function (do nothing)."
   :group 'markdown-toc
@@ -140,8 +158,6 @@ Default to identity function (do nothing)."
   (interactive)
   (message "markdown-toc version: %s" markdown-toc--toc-version))
 
-(defalias 'markdown-toc/version 'markdown-toc-version)
-
 (defun markdown-toc--compute-toc-structure-from-level (level menu-index)
   "Given a LEVEL and a MENU-INDEX, compute the toc structure."
   (when menu-index
@@ -149,19 +165,30 @@ Default to identity function (do nothing)."
            (tail  (cdr menu-index))
            (ttail (if (integerp tail) nil (cdr tail))))
       (cons `(,level . ,fst)
-            (--mapcat
-             (markdown-toc--compute-toc-structure-from-level (+ 1 level) it)
-             ttail)))))
+            (apply #'append
+                   (mapcar
+                    #'(lambda
+                        (it)
+                        (markdown-toc--compute-toc-structure-from-level
+                         (+ 1 level)
+                         it))
+                    ttail))))))
 
 (defun markdown-toc--compute-toc-structure (imenu-index)
   "Given a IMENU-INDEX, compute the TOC structure."
-  (--mapcat (markdown-toc--compute-toc-structure-from-level 0 it) imenu-index))
+  (apply #'append
+         (mapcar
+          #'(lambda
+              (it)
+              (markdown-toc--compute-toc-structure-from-level 0 it))
+          imenu-index)))
 
 (defun markdown-toc--symbol (sym n)
   "Compute the repetition of a symbol SYM N times as a string."
-  (--> n
-       (-repeat it sym)
-       (s-join "" it)))
+  (let ((it
+         (and (>= n 0)
+              (make-list n sym))))
+    (mapconcat #'identity it "")))
 
 (defconst markdown-toc--dash-protection-symbol "09876543214b825dc642cb6eb9a060e54bf8d69288fbee49041234567890"
   "Implementation detail to protect the - characters
@@ -171,20 +198,33 @@ Default to identity function (do nothing)."
   "Implementation detail to protect the `_` characters
   when converting to link.")
 
+(defun markdown-toc--str-replace (old new s)
+  "Replaces OLD with NEW in S."
+  (declare (pure t) (side-effect-free t))
+  (replace-regexp-in-string (regexp-quote old) new s t t))
+
 (defun markdown-toc--to-link (title &optional count)
   "Given a TITLE, return the markdown link associated."
-
-  (let ((count (if count count 0)))
+  (let ((count (or count 0)))
     (format "[%s](#%s%s)" title
-            (->> title
-                 s-trim
-                 downcase
-                 (s-replace "-" markdown-toc--dash-protection-symbol)
-                 (s-replace "_" markdown-toc--underscore-protection-symbol)
-                 (replace-regexp-in-string "[[:punct:]]" "")
-                 (s-replace markdown-toc--dash-protection-symbol "-")
-                 (s-replace markdown-toc--underscore-protection-symbol "_")
-                 (s-replace " " "-"))
+            (thread-last title
+                         string-trim
+                         downcase
+                         (markdown-toc--str-replace
+                          "-"
+                          markdown-toc--dash-protection-symbol)
+                         (markdown-toc--str-replace
+                          "_"
+                          markdown-toc--underscore-protection-symbol)
+                         (replace-regexp-in-string
+                          "[[:punct:]]" "")
+                         (markdown-toc--str-replace
+                          markdown-toc--dash-protection-symbol
+                          "-")
+                         (markdown-toc--str-replace
+                          markdown-toc--underscore-protection-symbol
+                          "_")
+                         (markdown-toc--str-replace " " "-"))
             (if (> count 0)
                 (concat "-" (number-to-string count))
               ""))))
@@ -192,26 +232,57 @@ Default to identity function (do nothing)."
 (defun markdown--count-duplicate-titles (toc-structure)
   "Counts the number of times each title appeared in the toc structure and adds
 it to the TOC structure."
-  (-map-indexed (lambda (index n)
-          (let* ((indent (car n))
-                (title (cdr n))
-                (count (--count (string= title (cdr it))
-                         (-take (+ index 1) toc-structure))))
-            (list indent title (- count 1))))
-    toc-structure))
+  (seq-map-indexed (lambda (n index)
+                     (let* ((indent (car n))
+                            (title (cdr n))
+                            (count
+                             (let ((result 0))
+                               (let ((list
+                                      (seq-take
+                                       toc-structure
+                                       (+ index 1)))
+                                     (i 0))
+                                 (while list
+                                   (let ((it
+                                          (car-safe
+                                           (prog1 list
+                                             (setq list
+                                                   (cdr list)))))
+                                         (it-index i))
+                                     (ignore it it-index)
+                                     (if
+                                         (string= title
+                                                  (cdr it))
+                                         (progn
+                                           (setq result
+                                                 (1+ result)))))
+                                   (setq i
+                                         (1+ i))))
+                               result)))
+                       (list indent title (- count 1))))
+                   toc-structure))
 
 (defun markdown-toc--to-markdown-toc (level-title-toc-list)
   "Given LEVEL-TITLE-TOC-LIST, a list of pair level, title, return a TOC string."
-  (->> level-title-toc-list
-       markdown--count-duplicate-titles
-       (--map (let ((nb-spaces (* markdown-toc-indentation-space (car it)))
-                    (title     (car (cdr it)))
-                    (count     (car (cdr (cdr it)))))
-                (format "%s%s %s"
-                        (markdown-toc--symbol " " nb-spaces)
-                        markdown-toc-list-item-marker
-                        (markdown-toc--to-link title count))))
-       (s-join "\n")))
+  (mapconcat (lambda
+               (it)
+               (let ((nb-spaces
+                      (* markdown-toc-indentation-space
+                         (car it)))
+                     (title
+                      (cadr it))
+                     (count (caddr it)))
+                 (if markdown-toc-quote
+                     (format "> %s%s %s"
+                             (markdown-toc--symbol " " nb-spaces)
+                             markdown-toc-list-item-marker
+                             (markdown-toc--to-link title count))
+                   (format "%s%s %s"
+                           (markdown-toc--symbol " " nb-spaces)
+                           markdown-toc-list-item-marker
+                           (markdown-toc--to-link title count)))))
+             (markdown--count-duplicate-titles level-title-toc-list)
+             "\n"))
 
 (defun markdown-toc--toc-already-present-p ()
   "Determine if a TOC has already been generated.
@@ -224,7 +295,7 @@ Return the end position if it exists, nil otherwise."
   "Compute the toc's starting point."
   (save-excursion
     (goto-char (markdown-toc--toc-already-present-p))
-    (point-at-bol)))
+    (line-beginning-position)))
 
 (defun markdown-toc--toc-end ()
   "Compute the toc's end point."
@@ -234,9 +305,8 @@ Return the end position if it exists, nil otherwise."
 
 (defun markdown-toc--generate-toc (toc-structure)
   "Given a TOC-STRUCTURE, compute a new toc."
-  (-> toc-structure
-      markdown-toc--to-markdown-toc
-      markdown-toc--compute-full-toc))
+  (markdown-toc--compute-full-toc
+   (markdown-toc--to-markdown-toc toc-structure)))
 
 (defun markdown-toc--delete-toc (&optional replace-toc-p)
   "Delets a TOC."
@@ -248,7 +318,7 @@ Return the end position if it exists, nil otherwise."
 
 (defun markdown-toc--compute-full-toc (toc)
   "Given the TOC's content, compute the full toc with comments and title."
-  (format "%s\n%s\n\n%s\n\n%s\n"
+  (format "%s\n\n%s\n\n%s\n\n%s\n"
           markdown-toc-header-toc-start
           markdown-toc-header-toc-title
           toc
@@ -261,20 +331,26 @@ Deletes any previous TOC.
 If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
   (interactive "P")
   (save-excursion
-    (when (markdown-toc--toc-already-present-p)
+    (when (and replace-toc-p
+               (markdown-toc--toc-already-present-p))
       ;; when toc already present, remove it
       (markdown-toc--delete-toc t))
-    (->> (funcall imenu-create-index-function)
-         markdown-toc--compute-toc-structure
-         (funcall markdown-toc-user-toc-structure-manipulation-fn)
-         markdown-toc--generate-toc
-         insert)))
+    (insert
+     (markdown-toc--generate-toc
+      (funcall markdown-toc-user-toc-structure-manipulation-fn
+               (markdown-toc--compute-toc-structure
+                (funcall imenu-create-index-function)))))))
 
-(defalias 'markdown-toc/generate-toc 'markdown-toc-generate-toc)
+
+
+(defun markdown-toc--refresh-toc-maybe ()
+  "Refresh the Table of Contents if it is already present."
+  (when (markdown-toc--toc-already-present-p)
+    (markdown-toc-generate-toc t)))
 
 ;;;###autoload
 (defun markdown-toc-generate-or-refresh-toc ()
-  "Generate a TOC for markdown file at current point or refreshes an already generated TOC."
+  "Generate or refresh the Table of Contents in the current markdown file."
   (interactive)
   (markdown-toc-generate-toc t))
 
@@ -282,8 +358,7 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
 (defun markdown-toc-refresh-toc ()
   "Refreshes an already generated TOC."
   (interactive)
-  (when (markdown-toc--toc-already-present-p)
-    (markdown-toc-generate-toc t)))
+  (markdown-toc--refresh-toc-maybe))
 
 ;;;###autoload
 (defun markdown-toc-delete-toc ()
@@ -292,28 +367,20 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
   (save-excursion
     (markdown-toc--delete-toc t)))
 
-(defun markdown-toc--read-title-out-of-link (link)
-  "Extract the link title out of a markdown LINK title.
-This assumes no funky stuff in the markdown link format ` - [<title>](...) `  "
-  (->> link
-       s-trim
-       (s-chop-prefix "- [")
-       (s-split "]")
-       car))
-
-(defun markdown-toc--title-level (link)
-  "Determine the markdown title LINK out of its indentation.
-If misindented or not prefixed by `-`, it's considered not a link
-and returns nil. Otherwise, returns the level number."
-  (when (s-prefix? "-" (-> link s-trim)) ;; if not, it's not a link title
-    (let ((indent (->> link
-                       (s-split "-")
-                       car  ;; first string contains a string with empty spaces
-                       ;; which should be a multiple of
-                       ;; `markdown-toc-indentation-space`
-                       length)))
-      (when (zerop (% indent markdown-toc-indentation-space))
-        (+ 1 (/ indent markdown-toc-indentation-space))))))
+(defun markdown-toc--link-title-at-point ()
+  "Return the title and indentation level of a markdown link at point."
+  (save-excursion
+    (beginning-of-line)
+    (when (looking-at "^\\(>?[\s\t]*\\)-[ ]\\(\\[\\([^]]+\\)]\\)")
+      (let ((indent-str (match-string-no-properties 1))
+            (title (match-string-no-properties 3)))
+        (let ((indent (if (string-prefix-p "> " indent-str)
+                          (1- (1- (length indent-str)))
+                        (length indent-str))))
+          (cons
+           (when (zerop (% indent markdown-toc-indentation-space))
+             (+ 1 (/ indent markdown-toc-indentation-space)))
+           title))))))
 
 ;;;###autoload
 (defun markdown-toc-follow-link-at-point ()
@@ -322,64 +389,90 @@ If the toc is misindented (according to markdown-toc-indentation-space`)
 or if not on a toc link, this does nothing.
 "
   (interactive)
-  (let* ((full-title (buffer-substring-no-properties (point-at-bol) (point-at-eol)))
-         (level (markdown-toc--title-level full-title)))
-    (if level ;; nil if misindented or not on a title
-        (let ((title (markdown-toc--read-title-out-of-link full-title)))
-          (goto-char (point-min))
-          (search-forward-regexp (format "%s %s" (s-repeat level "#") title)))
-      (message "markdown-toc: Not on a link (or misindented), nothing to do"))))
+  (pcase-let ((`(,level . ,title)
+               (markdown-toc--link-title-at-point)))
+    (when (and level title)
+      (goto-char (point-max))
+      (let ((case-fold-search nil))
+        (re-search-backward (concat (make-string level ?#)
+                                    "[\s\t]"
+                                    (regexp-quote title))
+                            nil t 1)))))
+
+
+(defun markdown-toc--follow-link (link)
+  "Navigate to the position of the given LINK in the markdown buffer.
+
+Argument LINK is a string representing the link to follow."
+  (when-let ((pos (save-excursion
+                    (goto-char (point-min))
+                    (re-search-forward (regexp-quote link) nil t 1)
+                    (markdown-toc-follow-link-at-point))))
+    (goto-char pos)
+    pos))
 
 (defun markdown-toc--bug-report ()
   "Compute the bug report for the user to include."
   (require 'find-func)
-  (->> `("Please:"
+  (string-join
+   (list "Please:"
          "- Describe your problem with clarity and conciceness (cf. https://www.gnu.org/software/emacs/manual/html_node/emacs/Understanding-Bug-Reporting.html)"
          "- Explicit your installation choice (melpa, marmalade, el-get, tarball, git clone...)."
-         "- Report the following message trace inside your issue."
-         ""
+         "- Report the following message trace inside your issue." ""
          "System information:"
-         ,(format "- system-type: %s" system-type)
-         ,(format "- locale-coding-system: %s" locale-coding-system)
-         ,(format "- emacs-version: %s" (emacs-version))
-         ,(format "- markdown-mode path: %s" (find-library-name "markdown-mode"))
-         ,(format "- markdown-toc version: %s" markdown-toc--toc-version)
-         ,(format "- markdown-toc path: %s" (find-library-name "markdown-toc")))
-       (s-join "\n")))
+         (format "- system-type: %s" system-type)
+         (format "- locale-coding-system: %s" locale-coding-system)
+         (format "- emacs-version: %s"
+                 (emacs-version))
+         (format "- markdown-mode path: %s"
+                 (if
+                     (fboundp 'find-library-name)
+                     (progn
+                       (find-library-name "markdown-mode"))))
+         (format "- markdown-toc version: %s" markdown-toc--toc-version)
+         (format "- markdown-toc path: %s"
+                 (if
+                     (fboundp 'find-library-name)
+                     (progn
+                       (find-library-name "markdown-toc")))))
+   "\n"))
 
+;;;###autoload
 (defun markdown-toc-bug-report (&optional open-url)
   "Display a bug report message.
 When OPEN-URL is filled, with universal argument (`C-u') is used,
 opens new issue in markdown-toc's github tracker."
   (interactive "P")
   (when open-url
-    (browse-url "https://github.com/ardumont/markdown-toc/issues/new"))
+    (browse-url "https://github.com/KarimAziev/markdown-toc/issues/new"))
   (markdown-toc-log-msg (list (markdown-toc--bug-report))))
 
-(defvar markdown-toc-mode-map nil "Default Bindings map for markdown-toc mode.")
+(defvar markdown-toc-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c m .") #'markdown-toc-follow-link-at-point)
+    (define-key map (kbd "C-c m t") #'markdown-toc-generate-or-refresh-toc)
+    (define-key map (kbd "C-c m d") #'markdown-toc-delete-toc)
+    map)
+  "Default Bindings map for markdown-toc mode.")
 
-(setq markdown-toc-mode-map
-      (let ((map (make-sparse-keymap)))
-        (define-key map (kbd "C-c m .") 'markdown-toc-follow-link-at-point)
-        (define-key map (kbd "C-c m t") 'markdown-toc-generate-or-refresh-toc)
-        (define-key map (kbd "C-c m d") 'markdown-toc-delete-toc)
-        (define-key map (kbd "C-c m v") 'markdown-toc-version)
-        map))
 
 ;;;###autoload
 (define-minor-mode markdown-toc-mode
-  "Functionality for generating toc in markdown file.
-With no argument, the mode is toggled on/off.
-Non-nil argument turns mode on.
-Nil argument turns mode off.
+  "Enable automatic Table of Contents generation and link navigation in Markdown.
 
-Commands:
-\\{markdown-toc-mode-map}"
-
+Enable automatic generation and updating of a Table of Contents (TOC) for
+Markdown files. When enabled, refresh the TOC before saving the buffer and allow
+navigation to TOC links."
   :init-value nil
   :lighter " mt"
   :group 'markdown-toc
-  :keymap markdown-toc-mode-map)
+  :keymap markdown-toc-mode-map
+  (remove-hook 'before-save-hook #'markdown-toc--refresh-toc-maybe 'local)
+  (remove-hook 'markdown-follow-link-functions #'markdown-toc--follow-link 'local)
+  (when markdown-toc-mode
+    (add-hook 'before-save-hook #'markdown-toc--refresh-toc-maybe nil 'local)
+    (add-hook 'markdown-follow-link-functions 'markdown-toc--follow-link nil
+              'local)))
 
 (provide 'markdown-toc)
 ;;; markdown-toc.el ends here
