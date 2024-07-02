@@ -190,21 +190,31 @@ Default to identity function (do nothing)."
               (make-list n sym))))
     (mapconcat #'identity it "")))
 
-(defconst markdown-toc--dash-protection-symbol "09876543214b825dc642cb6eb9a060e54bf8d69288fbee49041234567890"
-  "Implementation detail to protect the - characters
-  when converting to link.")
+(defconst markdown-toc--dash-protection-symbol
+  "09876543214b825dc642cb6eb9a060e54bf8d69288fbee49041234567890"
+  "String used to protect dashes in Markdown table of contents.")
 
 (defconst markdown-toc--underscore-protection-symbol "afec96cafb7bc4b0e216bfe86db4bd6c4aab44bca19dd9999b11e162f595d711"
-  "Implementation detail to protect the `_` characters
-  when converting to link.")
+  "Symbol used to protect underscores in Markdown table of contents.")
 
 (defun markdown-toc--str-replace (old new s)
-  "Replaces OLD with NEW in S."
+  "Replace occurrences of OLD with NEW in string S.
+
+Argument OLD is the substring to be replaced.
+
+Argument NEW is the replacement substring.
+
+Argument S is the original string where replacements will occur."
   (declare (pure t) (side-effect-free t))
   (replace-regexp-in-string (regexp-quote old) new s t t))
 
 (defun markdown-toc--to-link (title &optional count)
-  "Given a TITLE, return the markdown link associated."
+  "Return a formatted Markdown link from TITLE, optionally appending COUNT.
+
+Argument TITLE is the text to be converted into a Markdown link.
+
+Optional argument COUNT is a number used to disambiguate duplicate titles,
+defaulting to 0."
   (let ((count (or count 0)))
     (format "[%s](#%s%s)" title
             (thread-last title
@@ -229,9 +239,11 @@ Default to identity function (do nothing)."
                 (concat "-" (number-to-string count))
               ""))))
 
-(defun markdown--count-duplicate-titles (toc-structure)
-  "Counts the number of times each title appeared in the toc structure and adds
-it to the TOC structure."
+(defun markdown-toc--count-duplicate-titles (toc-structure)
+  "Count duplicate titles in a table of contents structure.
+
+Argument TOC-STRUCTURE is a list of cons cells where each cell contains an
+indent level and a title string."
   (seq-map-indexed (lambda (n index)
                      (let* ((indent (car n))
                             (title (cdr n))
@@ -281,7 +293,7 @@ it to the TOC structure."
                            (markdown-toc--symbol " " nb-spaces)
                            markdown-toc-list-item-marker
                            (markdown-toc--to-link title count)))))
-             (markdown--count-duplicate-titles level-title-toc-list)
+             (markdown-toc--count-duplicate-titles level-title-toc-list)
              "\n"))
 
 (defun markdown-toc--toc-already-present-p ()
@@ -309,7 +321,10 @@ Return the end position if it exists, nil otherwise."
    (markdown-toc--to-markdown-toc toc-structure)))
 
 (defun markdown-toc--delete-toc (&optional replace-toc-p)
-  "Delets a TOC."
+  "Delete the Table of Contents region and optionally move the cursor to its start.
+
+Argument REPLACE-TOC-P is a boolean flag indicating whether to move the cursor
+to the start of the TOC after deletion."
   (let ((region-start (markdown-toc--toc-start))
         (region-end   (markdown-toc--toc-end)))
     (delete-region region-start (1+ region-end))
@@ -385,9 +400,8 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
 ;;;###autoload
 (defun markdown-toc-follow-link-at-point ()
   "On a given toc link, navigate to the current markdown header.
-If the toc is misindented (according to markdown-toc-indentation-space`)
-or if not on a toc link, this does nothing.
-"
+If the toc is misindented (according to `markdown-toc-indentation-space')
+or if not on a toc link, this does nothing."
   (interactive)
   (pcase-let ((`(,level . ,title)
                (markdown-toc--link-title-at-point)))
