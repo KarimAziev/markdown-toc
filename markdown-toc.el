@@ -418,7 +418,7 @@ or if not on a toc link, this does nothing."
   "Navigate to the position of the given LINK in the markdown buffer.
 
 Argument LINK is a string representing the link to follow."
-  (when-let ((pos (save-excursion
+  (when-let* ((pos (save-excursion
                     (goto-char (point-min))
                     (re-search-forward (regexp-quote link) nil t 1)
                     (markdown-toc-follow-link-at-point))))
