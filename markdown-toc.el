@@ -458,19 +458,21 @@ Argument LINK is a string representing the link to follow."
             (goto-char (if bounds-of-toc
                            (car bounds-of-toc)
                          (point-min)))
-            (if (re-search-forward re (cdr bounds-of-toc) t 1)
-                (markdown-toc--link-heading-pos-at-point)
-              (when (string-prefix-p "#" link)
-                (let ((case-fold-search t)
-                      (regex (concat "^#[#]* "
-                                     (replace-regexp-in-string
-                                      "-" "[-\s]"
-                                      (substring-no-properties
-                                       (regexp-quote link)
-                                       1))
-                                     "\n")))
-                  (when (re-search-forward regex nil t 1)
-                    (match-beginning 0))))))))
+            (or
+             (and bounds-of-toc
+                  (when (re-search-forward re (cdr bounds-of-toc) t 1)
+                    (markdown-toc--link-heading-pos-at-point)))
+             (when (string-prefix-p "#" link)
+               (let ((case-fold-search t)
+                     (regex (concat "^#[#]* "
+                                    (replace-regexp-in-string
+                                     "-" "[-\s]"
+                                     (substring-no-properties
+                                      (regexp-quote link)
+                                      1))
+                                    "\n")))
+                 (when (re-search-forward regex nil t 1)
+                   (match-beginning 0))))))))
     (when pos
       (push-mark)
       (when (goto-char pos)
