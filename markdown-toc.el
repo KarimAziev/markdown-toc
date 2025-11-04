@@ -8,7 +8,7 @@
 ;; Created: 24th May 2014
 ;; Version: 0.2.0
 ;; Keywords: markdown, toc, tools,
-;; Package-Requires: ((markdown-mode "2.6") (emacs "26.1"))
+;; Package-Requires: ((markdown-mode "2.8") (emacs "28.1"))
 
 ;; This file is NOT part of GNU Emacs.
 
@@ -79,11 +79,13 @@ Example: '-' for unordered lists or '1.' for ordered lists."
           (string :tag "Ordered list header" "1."))
   :group 'markdown-toc)
 
-(defcustom markdown-toc-header-toc-start
-  "<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->"
-  "Beginning delimiter comment."
+(defcustom markdown-toc-header-toc-start "<!-- markdown-toc start - Don't edit this section. Run M-x markdown-toc-refresh-toc -->"
+  "Beginning delimiter comment.
+If empty or nil, `markdown-toc-header-toc-title' will be used instead."
   :group 'markdown-toc
-  :type 'string)
+  :type '(radio
+          string
+          (const :tag "None" nil)))
 
 (defcustom markdown-toc-header-toc-title
   "**Table of Contents**"
@@ -91,11 +93,12 @@ Example: '-' for unordered lists or '1.' for ordered lists."
   :group 'markdown-toc
   :type 'string)
 
-(defcustom markdown-toc-header-toc-end
-  "<!-- markdown-toc end -->"
-  "Ending delimiter comment."
+(defcustom markdown-toc-header-toc-end "<!-- markdown-toc end -->"
+  "Optional ending delimiter comment."
   :group 'markdown-toc
-  :type 'string)
+  :type '(radio
+          string
+          (const :tag "None" nil)))
 
 (defcustom markdown-toc-indentation-space 2
   "Let the user decide the indentation level."
@@ -147,6 +150,9 @@ example define the following function:
 Default to identity function (do nothing)."
   :group 'markdown-toc
   :type 'function)
+
+(defconst markdown-toc--toc-item-re
+  "^\\(>?[\s\t]*\\)-[ ]\\(\\[\\([^]]+\\)]\\)")
 
 (defun markdown-toc-log-msg (args)
   "Log message ARGS."
@@ -296,48 +302,65 @@ indent level and a title string."
              (markdown-toc--count-duplicate-titles level-title-toc-list)
              "\n"))
 
-(defun markdown-toc--toc-already-present-p ()
-  "Determine if a TOC has already been generated.
-Return the end position if it exists, nil otherwise."
+(defun markdown-toc--bounds-of-toc ()
+  "Return the start and end positions of the table of contents."
   (save-excursion
     (goto-char (point-min))
-    (re-search-forward markdown-toc-header-toc-start nil t)))
+    (when-let* ((start
+                 (when (re-search-forward
+                        (concat "^"
+                                (regexp-quote
+                                 (if
+                                     (or
+                                      (not
+                                       markdown-toc-header-toc-start)
+                                      (string-empty-p
+                                       markdown-toc-header-toc-start))
+                                     markdown-toc-header-toc-title
+                                   markdown-toc-header-toc-start)))
+                        nil t)
+                   (match-beginning 0)))
+                (end (if
+                         (and markdown-toc-header-toc-end
+                              (not (string-empty-p
+                                    markdown-toc-header-toc-end)))
+                         (re-search-forward
+                          (concat "^"
+                                  (regexp-quote markdown-toc-header-toc-end))
+                          nil t)
+                       (while (and (progn
+                                     (or
+                                      (looking-at "[\s\t]*\n")
+                                      (looking-at markdown-toc--toc-item-re)))
+                                   (zerop (forward-line))))
+                       (when (looking-back "^[\s\t]*\n" 0)
+                         (forward-char -1))
+                       (point))))
+      (when (and start end)
+        (cons start end)))))
 
-(defun markdown-toc--toc-start ()
-  "Compute the toc's starting point."
-  (save-excursion
-    (goto-char (markdown-toc--toc-already-present-p))
-    (line-beginning-position)))
-
-(defun markdown-toc--toc-end ()
-  "Compute the toc's end point."
-  (save-excursion
-    (goto-char (point-min))
-    (re-search-forward markdown-toc-header-toc-end nil t)))
 
 (defun markdown-toc--generate-toc (toc-structure)
   "Given a TOC-STRUCTURE, compute a new toc."
   (markdown-toc--compute-full-toc
    (markdown-toc--to-markdown-toc toc-structure)))
 
-(defun markdown-toc--delete-toc (&optional replace-toc-p)
-  "Delete the Table of Contents region and optionally move the cursor to its start.
-
-Argument REPLACE-TOC-P is a boolean flag indicating whether to move the cursor
-to the start of the TOC after deletion."
-  (let ((region-start (markdown-toc--toc-start))
-        (region-end   (markdown-toc--toc-end)))
-    (delete-region region-start (1+ region-end))
-    (when replace-toc-p
-          (goto-char region-start))))
 
 (defun markdown-toc--compute-full-toc (toc)
   "Given the TOC's content, compute the full toc with comments and title."
   (format "%s\n\n%s\n\n%s\n\n%s\n"
-          markdown-toc-header-toc-start
+          (or markdown-toc-header-toc-start "")
           markdown-toc-header-toc-title
           toc
-          markdown-toc-header-toc-end))
+          (or markdown-toc-header-toc-end "")))
+
+(defun markdown-toc--insert-toc ()
+  "Insert a generated table of contents into the current buffer."
+  (insert
+   (markdown-toc--generate-toc
+    (funcall markdown-toc-user-toc-structure-manipulation-fn
+             (markdown-toc--compute-toc-structure
+              (funcall imenu-create-index-function))))))
 
 ;;;###autoload
 (defun markdown-toc-generate-toc (&optional replace-toc-p)
@@ -346,22 +369,20 @@ Deletes any previous TOC.
 If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
   (interactive "P")
   (save-excursion
-    (when (and replace-toc-p
-               (markdown-toc--toc-already-present-p))
-      ;; when toc already present, remove it
-      (markdown-toc--delete-toc t))
-    (insert
-     (markdown-toc--generate-toc
-      (funcall markdown-toc-user-toc-structure-manipulation-fn
-               (markdown-toc--compute-toc-structure
-                (funcall imenu-create-index-function)))))))
+    (when-let* ((bounds (and replace-toc-p
+                             (markdown-toc--bounds-of-toc))))
+      (delete-region (car bounds)
+                     (cdr bounds)))
+    (markdown-toc--insert-toc)))
 
 
 
 (defun markdown-toc--refresh-toc-maybe ()
   "Refresh the Table of Contents if it is already present."
-  (when (markdown-toc--toc-already-present-p)
-    (markdown-toc-generate-toc t)))
+  (when-let* ((bounds (markdown-toc--bounds-of-toc)))
+    (delete-region (car bounds)
+                   (cdr bounds))
+    (markdown-toc--insert-toc)))
 
 ;;;###autoload
 (defun markdown-toc-generate-or-refresh-toc ()
@@ -379,14 +400,16 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
 (defun markdown-toc-delete-toc ()
   "Deletes a previously generated TOC."
   (interactive)
-  (save-excursion
-    (markdown-toc--delete-toc t)))
+  (when-let* ((bounds (and (markdown-toc--bounds-of-toc))))
+    (save-excursion
+      (delete-region (car bounds)
+                     (cdr bounds)))))
 
 (defun markdown-toc--link-title-at-point ()
   "Return the title and indentation level of a markdown link at point."
   (save-excursion
     (beginning-of-line)
-    (when (looking-at "^\\(>?[\s\t]*\\)-[ ]\\(\\[\\([^]]+\\)]\\)")
+    (when (looking-at markdown-toc--toc-item-re)
       (let ((indent-str (match-string-no-properties 1))
             (title (match-string-no-properties 3)))
         (let ((indent (if (string-prefix-p "> " indent-str)
@@ -397,34 +420,61 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
              (+ 1 (/ indent markdown-toc-indentation-space)))
            title))))))
 
+
+(defun markdown-toc--link-heading-pos-at-point ()
+  "Find and return the position of a markdown heading matching the title."
+  (pcase-let ((`(,level . ,title)
+               (markdown-toc--link-title-at-point)))
+    (when (and level title)
+      (let* ((search-fn (lambda (&optional fold-search)
+                          (save-excursion
+                            (let ((case-fold-search fold-search))
+                              (goto-char (point-max))
+                              (re-search-backward (concat (make-string level ?#)
+                                                          "[\s\t]"
+                                                          (regexp-quote title))
+                                                  nil t 1))))))
+        (or
+         (funcall search-fn nil)
+         (funcall search-fn t))))))
 ;;;###autoload
 (defun markdown-toc-follow-link-at-point ()
   "On a given toc link, navigate to the current markdown header.
 If the toc is misindented (according to `markdown-toc-indentation-space')
 or if not on a toc link, this does nothing."
   (interactive)
-  (pcase-let ((`(,level . ,title)
-               (markdown-toc--link-title-at-point)))
-    (when (and level title)
-      (goto-char (point-max))
-      (let ((case-fold-search nil))
-        (re-search-backward (concat (make-string level ?#)
-                                    "[\s\t]"
-                                    (regexp-quote title))
-                            nil t 1)))))
+  (when-let* ((pos (markdown-toc--link-heading-pos-at-point)))
+    (goto-char pos)))
 
 
 (defun markdown-toc--follow-link (link)
   "Navigate to the position of the given LINK in the markdown buffer.
 
 Argument LINK is a string representing the link to follow."
-  (when-let* ((pos (save-excursion
-                    (goto-char (point-min))
-                    (re-search-forward (regexp-quote link) nil t 1)
-                    (markdown-toc-follow-link-at-point))))
-    (push-mark)
-    (when (goto-char pos)
-      (recenter))
+  (let* ((bounds-of-toc (markdown-toc--bounds-of-toc))
+         (re (regexp-quote link))
+         (pos
+          (save-excursion
+            (goto-char (if bounds-of-toc
+                           (car bounds-of-toc)
+                         (point-min)))
+            (if (re-search-forward re (cdr bounds-of-toc) t 1)
+                (markdown-toc--link-heading-pos-at-point)
+              (when (string-prefix-p "#" link)
+                (let ((case-fold-search t)
+                      (regex (concat "^#[#]* "
+                                     (replace-regexp-in-string
+                                      "-" "[-\s]"
+                                      (substring-no-properties
+                                       (regexp-quote link)
+                                       1))
+                                     "\n")))
+                  (when (re-search-forward regex nil t 1)
+                    (match-beginning 0))))))))
+    (when pos
+      (push-mark)
+      (when (goto-char pos)
+        (recenter)))
     pos))
 
 (defun markdown-toc--bug-report ()
