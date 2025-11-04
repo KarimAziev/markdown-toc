@@ -70,8 +70,7 @@
   "A simple TOC generator for markdown file."
   :group 'markdown)
 
-(defcustom markdown-toc-list-item-marker
-  "-"
+(defcustom markdown-toc-list-item-marker "-"
   "List item marker that should be used.
 Example: '-' for unordered lists or '1.' for ordered lists."
   :type '(choice
@@ -87,8 +86,7 @@ If empty or nil, `markdown-toc-header-toc-title' will be used instead."
           string
           (const :tag "None" nil)))
 
-(defcustom markdown-toc-header-toc-title
-  "**Table of Contents**"
+(defcustom markdown-toc-header-toc-title "**Table of Contents**"
   "Title comment on TOC header."
   :group 'markdown-toc
   :type 'string)
@@ -156,7 +154,8 @@ Default to identity function (do nothing)."
 
 (defun markdown-toc-log-msg (args)
   "Log message ARGS."
-  (apply #'message (format "markdown-toc - %s" (car args)) (cdr args)))
+  (apply #'message (format "markdown-toc - %s" (car args))
+         (cdr args)))
 
 ;;;###autoload
 (defun markdown-toc-version ()
@@ -200,7 +199,8 @@ Default to identity function (do nothing)."
   "09876543214b825dc642cb6eb9a060e54bf8d69288fbee49041234567890"
   "String used to protect dashes in Markdown table of contents.")
 
-(defconst markdown-toc--underscore-protection-symbol "afec96cafb7bc4b0e216bfe86db4bd6c4aab44bca19dd9999b11e162f595d711"
+(defconst markdown-toc--underscore-protection-symbol
+  "afec96cafb7bc4b0e216bfe86db4bd6c4aab44bca19dd9999b11e162f595d711"
   "Symbol used to protect underscores in Markdown table of contents.")
 
 (defun markdown-toc--str-replace (old new s)
@@ -211,7 +211,8 @@ Argument OLD is the substring to be replaced.
 Argument NEW is the replacement substring.
 
 Argument S is the original string where replacements will occur."
-  (declare (pure t) (side-effect-free t))
+  (declare (pure t)
+           (side-effect-free t))
   (replace-regexp-in-string (regexp-quote old) new s t t))
 
 (defun markdown-toc--to-link (title &optional count)
@@ -339,12 +340,10 @@ indent level and a title string."
       (when (and start end)
         (cons start end)))))
 
-
 (defun markdown-toc--generate-toc (toc-structure)
   "Given a TOC-STRUCTURE, compute a new toc."
   (markdown-toc--compute-full-toc
    (markdown-toc--to-markdown-toc toc-structure)))
-
 
 (defun markdown-toc--compute-full-toc (toc)
   "Given the TOC's content, compute the full toc with comments and title."
@@ -375,8 +374,6 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
       (delete-region (car bounds)
                      (cdr bounds)))
     (markdown-toc--insert-toc)))
-
-
 
 (defun markdown-toc--refresh-toc-maybe ()
   "Refresh the Table of Contents if it is already present."
@@ -422,7 +419,6 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
              (+ 1 (/ indent markdown-toc-indentation-space)))
            title))))))
 
-
 (defun markdown-toc--link-heading-pos-at-point ()
   "Find and return the position of a markdown heading matching the title."
   (pcase-let ((`(,level . ,title)
@@ -439,6 +435,7 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
         (or
          (funcall search-fn nil)
          (funcall search-fn t))))))
+
 ;;;###autoload
 (defun markdown-toc-follow-link-at-point ()
   "On a given toc link, navigate to the current markdown header.
@@ -447,7 +444,6 @@ or if not on a toc link, this does nothing."
   (interactive)
   (when-let* ((pos (markdown-toc--link-heading-pos-at-point)))
     (goto-char pos)))
-
 
 (defun markdown-toc--follow-link (link)
   "Navigate to the position of the given LINK in the markdown buffer.
@@ -516,7 +512,6 @@ opens new issue in markdown-toc's github tracker."
   (when open-url
     (browse-url "https://github.com/KarimAziev/markdown-toc/issues/new"))
   (markdown-toc-log-msg (list (markdown-toc--bug-report))))
-
 
 ;;;###autoload
 (define-minor-mode markdown-toc-mode
