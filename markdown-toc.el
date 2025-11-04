@@ -371,6 +371,7 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
   (save-excursion
     (when-let* ((bounds (and replace-toc-p
                              (markdown-toc--bounds-of-toc))))
+      (goto-char (car bounds))
       (delete-region (car bounds)
                      (cdr bounds)))
     (markdown-toc--insert-toc)))
