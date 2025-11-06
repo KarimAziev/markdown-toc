@@ -378,10 +378,11 @@ If called interactively with prefix arg REPLACE-TOC-P, replaces previous TOC."
 (defun markdown-toc--refresh-toc-maybe ()
   "Refresh the Table of Contents if it is already present."
   (when-let* ((bounds (markdown-toc--bounds-of-toc)))
-    (goto-char (car bounds))
-    (delete-region (car bounds)
-                   (cdr bounds))
-    (markdown-toc--insert-toc)))
+    (save-excursion
+      (goto-char (car bounds))
+      (delete-region (car bounds)
+                     (cdr bounds))
+      (markdown-toc--insert-toc))))
 
 ;;;###autoload
 (defun markdown-toc-generate-or-refresh-toc ()
